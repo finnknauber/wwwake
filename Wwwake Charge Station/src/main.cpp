@@ -5,77 +5,67 @@
 #include <RTClib.h>
 
 
-#define dcf77 PB12
-#define dcfEnable PB13
-#define buzzer PA8
-#define encoder_switch PB15
-#define encoderA PA10
-#define encoderB PA2 //PA9
+#define LED PC13 // PA1
 #define BATLEVEL PB1
-#define LED PA1
-#define CHRG PB4
-#define STDBY PB3
-#define RX PA3
 #define TX PA2
+#define RX PA3
+#define CHARGE PB4
+#define STANDBY PB3
+#define ENCODERA PA10
+#define ENCODERB PA2 //PA9
+#define BUZZER PA8
+#define ENCODERSWITCH PB15
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
-#define selectionPage -1
-#define alarmPage 0
-#define vibrationPage 1
-#define settingsPage 2
+#define SELECTION_PAGE -1
+#define ALARM_PAGE 0
+#define VIBRATION_PAGE 1
+#define SETTINGS_PAGE 2
 
 
 Adafruit_SSD1306 oled(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 RTC_DS1307 rtc;
 
 
-const unsigned int arrow_locations[4] = {16, 56, 96};
 
-// DCF77
-volatile unsigned long long currentBuf = 0;
-volatile unsigned long long dataBuf = 0;
-volatile unsigned long last_high_time = 0;
-volatile unsigned long last_dcf_call = 0;
-volatile unsigned long dcf77_last_received = 0;
-volatile unsigned long dcf77_last_timestamp = 0;
-volatile int counter = 0;
-int dcfYear = 1969;
-int dcfMonth = 1;
-int dcfDayOfMonth = 1;
-int dcfDayOfWeek = 3;
-int dcfHour = 4;
-int dcfMinute = 20;
-String time_str = "";
 
-// Pages
+// Display Helpers
+const unsigned int arrowLocations[4] = {16, 56, 96};
+String timeString = "";
 int currentLowerPage = 0;
 int currentPage = -1;
 
-int wake_hour = 0;
-int wake_minute = 0;
-int vibration_pattern = 1;
+// Wake Data
+int wakeHour = 0;
+int wakeMinute = 0;
+int vibrationPattern = 1;
 
-unsigned long last_user_input = 0;
+// User Input
+unsigned long lastUserInput = 0;
 bool pressed = false;
-bool long_press_registered = false;
-bool active_user = false;
-bool always_on = true;
+bool longPressRegistered = false;
+bool activeUser = false;
+
+// Settings
+bool soundOn = true;
+bool alwaysOn = true;
 bool dimmed = false;
 
 
 // Encoder
-unsigned long switch_last_pressed = 0;
-unsigned long last_encoder_turn = 0;
-unsigned long last_encoder_callA = 0;
-unsigned long last_encoder_callB = 0;
+unsigned long switchLastPressed = 0;
+unsigned long lastEncoderTurn = 0;
+unsigned long lastEncoderCallA = 0;
+unsigned long lastEncoderCallB = 0;
 volatile int encoderLocation = 0;
 bool allowEncoderOverflow = true;
 int minLimitEncoder = 0;
 int maxLimitEncoder = 2;
 
 
-const unsigned char settings_bitmap [] PROGMEM = {
+
+const unsigned char settingsBitmap [] PROGMEM = {
     0x00, 0x03, 0xC0, 0x00, 0x00, 0x07, 0xE0, 0x00, 0x00, 0x07, 0xE0, 0x00, 0x00, 0x07, 0xE0, 0x00,
     0x03, 0x87, 0xE1, 0xC0, 0x07, 0xFF, 0xFF, 0xE0, 0x0F, 0xFF, 0xFF, 0xF0, 0x0F, 0xFF, 0xFF, 0xF0,
     0x0F, 0xFF, 0xFF, 0xF0, 0x07, 0xF8, 0x1F, 0xE0, 0x07, 0xE0, 0x07, 0xE0, 0x07, 0xC0, 0x03, 0xE0,
@@ -87,7 +77,7 @@ const unsigned char settings_bitmap [] PROGMEM = {
 };
 
 
-const unsigned char alarm_bitmap [] PROGMEM = {
+const unsigned char alarmBitmap [] PROGMEM = {
     0x07, 0x00, 0x00, 0x60, 0x1F, 0xC0, 0x03, 0xF8, 0x3F, 0x80, 0x01, 0xFE, 0x7F, 0x00, 0x00, 0xFE,
     0xFE, 0x07, 0xE0, 0x7F, 0xFC, 0x3F, 0xFC, 0x3F, 0xF0, 0xFF, 0xFF, 0x0F, 0xE1, 0xFC, 0x1F, 0x87,
     0x43, 0xE0, 0x07, 0xC2, 0x07, 0x80, 0x01, 0xE0, 0x07, 0x01, 0x80, 0xF0, 0x0E, 0x01, 0x80, 0x70,
@@ -99,7 +89,7 @@ const unsigned char alarm_bitmap [] PROGMEM = {
 };
 
 
-const unsigned char vibration_bitmap [] PROGMEM = {
+const unsigned char vibrationBitmap [] PROGMEM = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x01, 0xFF, 0xFF, 0x00, 0x01, 0xFF, 0xFF, 0x00, 0x01, 0x80, 0x03, 0x00, 0x21, 0x80, 0x03, 0x04,
     0x71, 0x80, 0x03, 0x0E, 0x39, 0x80, 0x03, 0x1C, 0x39, 0x80, 0x03, 0x1C, 0x71, 0x80, 0x03, 0x0E,
@@ -111,12 +101,12 @@ const unsigned char vibration_bitmap [] PROGMEM = {
 };
 
 
-const unsigned char arrow_bitmap [] PROGMEM = {
+const unsigned char arrowBitmap [] PROGMEM = {
     0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80, 0x01, 0x80,
     0x31, 0x8C, 0x39, 0x9C, 0x1D, 0xB8, 0x0F, 0xF0, 0x07, 0xE0, 0x01, 0x80,
 };
 
-const unsigned char wwwake_bitmap [] PROGMEM = {
+const unsigned char wwwakeBitmap [] PROGMEM = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F, 0x00, 0x00, 0x00, 0x00,
@@ -156,6 +146,49 @@ const unsigned char wwwake_bitmap [] PROGMEM = {
 
 
 
+void playErrorSound() {
+    if (soundOn) {
+        tone(BUZZER, 4000);
+        delay(500);
+        tone(BUZZER, 1000);
+        delay(700);
+        noTone(BUZZER);
+        digitalWrite(BUZZER, LOW);
+    }
+}
+
+void playShortPress() {
+    if (soundOn) {
+        tone(BUZZER, 4000);
+        delay(50);
+        noTone(BUZZER);
+        digitalWrite(BUZZER, LOW);
+    }
+}
+
+void playLongPress() {
+    if (soundOn) {
+        tone(BUZZER, 4000);
+        delay(250);
+        noTone(BUZZER);
+        digitalWrite(BUZZER, LOW);
+    }
+}
+
+void playStartSound() {
+    if (soundOn) {
+        tone(BUZZER, 2500);
+        delay(500);
+        tone(BUZZER, 3000);
+        delay(500);
+        tone(BUZZER, 4000);
+        delay(500);
+        noTone(BUZZER);
+        digitalWrite(BUZZER, LOW);
+    }
+}
+
+
 int limitEncoder() {
     if (encoderLocation < minLimitEncoder) {
         if (allowEncoderOverflow) {
@@ -179,30 +212,24 @@ int limitEncoder() {
 
 void displayClock(bool center) {
     DateTime now = rtc.now();
-    time_str = "";
+    timeString = "";
     if (now.hour() < 10) {
-        time_str += "0";
+        timeString += "0";
     }
-    time_str += now.hour();
+    timeString += now.hour();
 
-    // only blink when time signal available
-    if (millis() - dcf77_last_timestamp > 65000 or dcf77_last_timestamp == 0) {
-        time_str += ":";
+    if (now.second() % 2 == 1) {
+        timeString += " ";
     }
     else {
-        if (now.second() % 2 == 1) {
-            time_str += " ";
-        }
-        else {
-            time_str += ":";
-        }
+        timeString += ":";
     }
 
 
     if (now.minute() < 10) {
-        time_str += "0";
+        timeString += "0";
     }
-    time_str += now.minute();
+    timeString += now.minute();
 
     if (center) {
         oled.setTextSize(3);
@@ -212,12 +239,17 @@ void displayClock(bool center) {
         oled.setTextSize(2);
         oled.setCursor((SCREEN_WIDTH - 60) / 2, 0);
     }
-    oled.println(time_str);
+    oled.println(timeString);
 
     delay(3);
 }
 
+
 void displaySettings() {
+    // Always On bool
+    // Brightness Bool
+    // Buzzer bool
+    // set time
     oled.setCursor(13, 0);
     oled.println("Always On Display");
     oled.setTextSize(2);
@@ -244,7 +276,7 @@ void displaySettings() {
         }
     }
     else {
-        if (always_on) {
+        if (alwaysOn) {
             oled.setCursor(52, 12);
             oled.println("On");
         }
@@ -285,16 +317,16 @@ void displayAlarm() {
         }
         oled.print(currentLocation);
         oled.print(":");
-        if (wake_minute < 10) {
+        if (wakeMinute < 10) {
             oled.print("0");
         }
-        oled.println(wake_minute);
+        oled.println(wakeMinute);
     }
     else {
-        if (wake_hour < 10) {
+        if (wakeHour < 10) {
             oled.print("0");
         }
-        oled.print(wake_hour);
+        oled.print(wakeHour);
         oled.print(":");
         minLimitEncoder = 0; maxLimitEncoder = 59; allowEncoderOverflow = true;
         int currentLocation = encoderLocation;
@@ -315,142 +347,108 @@ void displayVibration() {
     oled.println(encoderLocation+1);
 }
 
+
 void displayPages() {
     oled.setTextSize(1);
     switch (currentPage) {
-        case alarmPage:
+        case ALARM_PAGE:
             displayAlarm();
             break;
-        case vibrationPage:
+        case VIBRATION_PAGE:
             displayVibration();
             break;
-        case settingsPage:
+        case SETTINGS_PAGE:
             displaySettings();
             break;
-        case selectionPage:
+        case SELECTION_PAGE:
             displayClock(false);
             minLimitEncoder = 0; maxLimitEncoder = 2; allowEncoderOverflow = true;
-            oled.drawBitmap(arrow_locations[encoderLocation], 16, arrow_bitmap, 16, 14, WHITE);
+            oled.drawBitmap(arrowLocations[encoderLocation], 16, arrowBitmap, 16, 14, WHITE);
             // draw Settings icon
-            oled.drawBitmap(8, 32, alarm_bitmap, 32, 32, WHITE);
+            oled.drawBitmap(8, 32, alarmBitmap, 32, 32, WHITE);
             // draw Alarm icon
-            oled.drawBitmap(48, 32, vibration_bitmap, 32, 32, WHITE);
+            oled.drawBitmap(48, 32, vibrationBitmap, 32, 32, WHITE);
             // draw vibration Pattern icon
-            oled.drawBitmap(88, 32, settings_bitmap, 32, 32, WHITE);
+            oled.drawBitmap(88, 32, settingsBitmap, 32, 32, WHITE);
             break;
         default:
-            currentPage = selectionPage;
+            currentPage = SELECTION_PAGE;
             break;
     }
 }
 
 
 void checkActive() {
-    if (millis() - last_user_input < 15000) {
-        if (millis() > 15000 or last_user_input != 0) {
-            if (not active_user) {
-                active_user = true;
+    if (millis() - lastUserInput < 15000) {
+        if (millis() > 15000 or lastUserInput != 0) {
+            if (not activeUser) {
+                activeUser = true;
                 encoderLocation = 0;
             }
         }
     }
     else {
-        if (active_user) {
-            active_user = false;
-            currentPage = selectionPage;
+        if (activeUser) {
+            activeUser = false;
+            currentPage = SELECTION_PAGE;
         }
     }
 }
 
 
-void playErrorSound() {
-    tone(buzzer, 4000);
-    delay(500);
-    tone(buzzer, 1000);
-    delay(700);
-    noTone(buzzer);
-    digitalWrite(buzzer, LOW);
-}
-
-void playShortPress() {
-    tone(buzzer, 4000);
-    delay(50);
-    noTone(buzzer);
-    digitalWrite(buzzer, LOW);
-}
-
-void playLongPress() {
-    tone(buzzer, 4000);
-    delay(250);
-    noTone(buzzer);
-    digitalWrite(buzzer, LOW);
-}
-
-void playStartSound() {
-    tone(buzzer, 2500);
-    delay(500);
-    tone(buzzer, 3000);
-    delay(500);
-    tone(buzzer, 4000);
-    delay(500);
-    noTone(buzzer);
-    digitalWrite(buzzer, LOW);
-}
-
-
 void handleShortPress() {
     switch (currentPage) {
-        case selectionPage:
+        case SELECTION_PAGE:
             currentLowerPage = 0;
             currentPage = encoderLocation;
             encoderLocation = 0;
             switch (currentPage) {
-                case settingsPage:
-                    encoderLocation = always_on ? 0 : 1;
+                case SETTINGS_PAGE:
+                    encoderLocation = alwaysOn ? 0 : 1;
                     break;
 
-                case alarmPage:
-                    encoderLocation = wake_hour;
+                case ALARM_PAGE:
+                    encoderLocation = wakeHour;
                     break;
 
-                case vibrationPage:
-                    encoderLocation = vibration_pattern;
+                case VIBRATION_PAGE:
+                    encoderLocation = vibrationPattern;
                     break;
                 
                 default:
-                    currentPage = selectionPage;
+                    currentPage = SELECTION_PAGE;
                     break;
             }
             break;
 
-        case alarmPage:
+        case ALARM_PAGE:
             if (currentLowerPage == 0) {
-                wake_hour = encoderLocation;
-                encoderLocation = wake_minute;
+                wakeHour = encoderLocation;
+                encoderLocation = wakeMinute;
                 currentLowerPage = 1;
             }
             else {
-                wake_minute = encoderLocation;
+                wakeMinute = encoderLocation;
                 encoderLocation = 0;
                 currentLowerPage = 0;
-                currentPage = selectionPage;
+                currentPage = SELECTION_PAGE;
             }
             break;
 
-        case vibrationPage:
-            vibration_pattern = encoderLocation;
+        case VIBRATION_PAGE:
+            vibrationPattern = encoderLocation;
             encoderLocation = 0;
             currentLowerPage = 0;
-            currentPage = selectionPage;
+            currentPage = SELECTION_PAGE;
             break;
 
-        case settingsPage:
+        case SETTINGS_PAGE:
             if (currentLowerPage == 0) {
                 if (encoderLocation % 2 == 0) {
-                    always_on = true;
+                    alwaysOn = true;
                 }
                 else {
-                    always_on = false;
+                    alwaysOn = false;
                 }
                 encoderLocation = dimmed ? 0 : 1;
                 currentLowerPage = 1;
@@ -458,49 +456,49 @@ void handleShortPress() {
             else {
                 encoderLocation = 0;
                 currentLowerPage = 0;
-                currentPage = selectionPage;
+                currentPage = SELECTION_PAGE;
             }
             break;
 
         default:
-            currentPage = selectionPage;
+            currentPage = SELECTION_PAGE;
             break;
     }
 }
 
 
 void checkEncoderButton() {
-    if (digitalRead(encoder_switch) == LOW) {
+    if (digitalRead(ENCODERSWITCH) == LOW) {
         if (not pressed) {
-            switch_last_pressed = millis();
+            switchLastPressed = millis();
             pressed = true;
         }
-        else if (millis() - switch_last_pressed > 500 and not long_press_registered) {
-            long_press_registered = true;
+        else if (millis() - switchLastPressed > 500 and not longPressRegistered) {
+            longPressRegistered = true;
             playLongPress();
-            last_user_input = millis();
-            if (active_user and currentPage == selectionPage) {
-                active_user = false;
-                last_user_input = 0;
+            lastUserInput = millis();
+            if (activeUser and currentPage == SELECTION_PAGE) {
+                activeUser = false;
+                lastUserInput = 0;
             }
-            else if (active_user and currentPage != selectionPage) {
-                currentPage = selectionPage;
+            else if (activeUser and currentPage != SELECTION_PAGE) {
+                currentPage = SELECTION_PAGE;
                 encoderLocation = 0;
                 currentLowerPage = 0;
             }
         }
     }
 
-    else if (digitalRead(encoder_switch) == HIGH) {
+    else if (digitalRead(ENCODERSWITCH) == HIGH) {
         if (pressed) {
             pressed = false;
-            long_press_registered = false;
-            if (millis() - switch_last_pressed <= 500) {
+            longPressRegistered = false;
+            if (millis() - switchLastPressed <= 500) {
                 playShortPress();
                 digitalWrite(RX, !digitalRead(RX));
 
-                last_user_input = millis();
-                if (active_user) {
+                lastUserInput = millis();
+                if (activeUser) {
                     handleShortPress();
                 }
             }
@@ -510,116 +508,57 @@ void checkEncoderButton() {
 
 
 void encoder_turn_callA() {
-    if (millis() - last_encoder_callA > 15) {
-        if (digitalRead(encoderA) == LOW and digitalRead(encoderB) == LOW) {
-            if (millis() - last_encoder_turn > 25) {
+    if (millis() - lastEncoderCallA > 15) {
+        if (digitalRead(ENCODERA) == LOW and digitalRead(ENCODERB) == LOW) {
+            if (millis() - lastEncoderTurn > 25) {
                 encoderLocation++;
                 limitEncoder();
-                last_user_input = millis();
-                last_encoder_turn = millis();
+                lastUserInput = millis();
+                lastEncoderTurn = millis();
             }
         }
-        last_encoder_callA = millis();
+        lastEncoderCallA = millis();
     }
 }
 
 
 void encoder_turn_callB() {
-    if (millis() - last_encoder_callB > 15) {
-        if (digitalRead(encoderA) == LOW and digitalRead(encoderB) == LOW) {
-            if (millis() - last_encoder_turn > 25) {
+    if (millis() - lastEncoderCallB > 15) {
+        if (digitalRead(ENCODERA) == LOW and digitalRead(ENCODERB) == LOW) {
+            if (millis() - lastEncoderTurn > 25) {
                 encoderLocation--;
                 limitEncoder();
-                last_user_input = millis();
-                last_encoder_turn = millis();
+                lastUserInput = millis();
+                lastEncoderTurn = millis();
             }
         }
-        last_encoder_callB = millis();
+        lastEncoderCallB = millis();
     }
 }
 
-
-void checkTime() {
-    if (dcf77_last_received != 0) {
-        if (bitRead(dataBuf, 0) == 0) {
-            dcfYear = 2000 + ((dataBuf >> 54) & 0x0F) * 10 + ((dataBuf >> 50) & 0x0F);  // year = bit 50-57
-            dcfMonth = ((dataBuf >> 49) & 0x01) * 10 + ((dataBuf >> 45) & 0x0F);        // month = bit 45-49
-            dcfDayOfMonth = ((dataBuf >> 40) & 0x03) * 10 + ((dataBuf >> 36) & 0x0F);   // day of the month = bit 36-41
-            dcfDayOfWeek = (dataBuf >> 42) & 0x07;                                      // day of the week = bit 42-44
-            dcfHour = ((dataBuf >> 33) & 0x03) * 10 + ((dataBuf >> 29) & 0x0F);         // hour = bit 29-34
-            dcfMinute = ((dataBuf >> 25) & 0x07) * 10 + ((dataBuf >> 21) & 0x0F);       // minute = 21-27
-            if (millis() - dcf77_last_received < 60000) {
-                int dcfSeconds = (millis() - dcf77_last_received) / 1000;
-                rtc.adjust(DateTime(dcfYear, dcfMonth, dcfDayOfMonth, dcfHour, dcfMinute, dcfSeconds));
-            }
-            else {
-                dcf77_last_timestamp = 0;
-            }
-        }
-        else {
-            dcf77_last_timestamp = 0;
-        }
-        dataBuf = 0;
-        dcf77_last_received = 0;
-    }
-}
-
-void DCF77_ISR() {
-    // debouncing
-    if (millis() >= last_dcf_call + 50) {
-        // new minute starting + new signal start
-        if (millis() - last_dcf_call > 1500 and millis() > 10000) {
-            if (counter == 59 and dcf77_last_received == 0) {
-                for (int i = 0; i < 59; i++) {
-                    dataBuf = dataBuf << 1;
-                    dataBuf |= bitRead(currentBuf, i);
-                }
-                dcf77_last_received = millis();
-                dcf77_last_timestamp = millis();
-            }
-            counter = 0;
-            currentBuf = 0;
-        }
-
-
-        // signal incoming
-        if (digitalRead(dcf77)) {
-            digitalWrite(LED, !digitalRead(LED));
-            last_high_time = millis();
-        }
-
-        // signal readout
-        else {
-            unsigned long high_time = millis() - last_high_time;
-            currentBuf = currentBuf << 1;
-            if (high_time > 150 and high_time < 250) {
-                currentBuf |= 1;
-            }
-
-            last_high_time = millis();
-            counter += 1;
-        }
-        last_dcf_call = millis();
-    }
-}
 
 
 
 void setup() {
-    time_str.reserve(15);
+    timeString.reserve(15);
     analogReadResolution(12);
 
-    pinMode(CHRG, INPUT_PULLUP);
-    pinMode(STDBY, INPUT_PULLUP);
-    pinMode(buzzer, OUTPUT);
-    pinMode(encoder_switch, INPUT);
-    pinMode(encoderA, INPUT_PULLUP);
-    pinMode(encoderB, INPUT_PULLUP);
-    pinMode(RX, OUTPUT);
+    pinMode(CHARGE, INPUT_PULLUP);
+    pinMode(STANDBY, INPUT_PULLUP);
+    pinMode(ENCODERSWITCH, INPUT);
+    pinMode(ENCODERA, INPUT);
+    pinMode(ENCODERB, INPUT);
+    pinMode(BUZZER, OUTPUT);
     pinMode(LED, OUTPUT);
+
+
+    // TODO Remove this for the new version
+    pinMode(RX, OUTPUT);
+    pinMode(TX, OUTPUT);
     digitalWrite(RX, LOW);
 
 
+    // Initialize OLED Screen
     if (!oled.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
         playErrorSound();
         // TODO Error handling
@@ -627,23 +566,17 @@ void setup() {
         while (true);
     }
     delay(10);
+
+    // Display Start Screen
     oled.clearDisplay();
     oled.setTextColor(WHITE);
     oled.setTextSize(2);
-    oled.drawBitmap(0, 15, wwwake_bitmap, 128, 35, WHITE);
+    oled.drawBitmap(0, 15, wwwakeBitmap, 128, 35, WHITE);
     oled.display();
     playStartSound();
     digitalWrite(LED, LOW);
     delay(500);
     digitalWrite(LED, HIGH);
-
-    attachInterrupt(digitalPinToInterrupt(encoderA), encoder_turn_callA, FALLING);
-    attachInterrupt(digitalPinToInterrupt(encoderB), encoder_turn_callB, FALLING);
-    digitalWrite(dcfEnable, HIGH);
-    attachInterrupt(digitalPinToInterrupt(dcf77), DCF77_ISR, CHANGE);
-    digitalWrite(buzzer, LOW);
-    delay(500);
-
 
     // SETUP RTC MODULE
     if (!rtc.begin()) {
@@ -653,29 +586,30 @@ void setup() {
         while (true);
     }
     // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-    delay(1000);
+    delay(500);
+
+    attachInterrupt(digitalPinToInterrupt(ENCODERA), encoder_turn_callA, FALLING);
+    attachInterrupt(digitalPinToInterrupt(ENCODERB), encoder_turn_callB, FALLING);
+    delay(250);
 }
 
 
 void loop() {
     oled.clearDisplay();
     oled.setCursor(0, 0);
-    oled.print("CHARGE: ");
-    oled.println(digitalRead(CHRG));
+    oled.print("CHARGE: ");\
+    oled.println(!digitalRead(CHARGE));
     oled.print("STANDBY: ");
-    oled.println(digitalRead(STDBY));
+    oled.println(!digitalRead(STANDBY));
     oled.println("Bat-Level");
-    // digitalWrite(RX, LOW);
     delay(30);
     float value = 0.0;
     for (int i=0; i<10; i++) {
         value = value + (float(analogRead(BATLEVEL))/4096) * 3.3 * 2;
         delay(5);
     }
-    // digitalWrite(RX, HIGH);
     float median = (float(value)/10);
     oled.println(median);
-    // oled.fillScreen(WHITE);
     oled.display();
     delay(50);
 
@@ -687,11 +621,11 @@ void loop() {
 
     // draw Interface
     oled.clearDisplay();
-    if (active_user) {
+    if (activeUser) {
         displayPages();
         delay(5);
     }
-    else if (always_on) {
+    else if (alwaysOn) {
         displayClock(true);
     }
 
