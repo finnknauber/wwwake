@@ -7,16 +7,17 @@
 
 
 // Pins
-#define LED PC13 // PA1
+#define LED PC13
 #define BATLEVEL PB1
 #define TX PA2
 #define RX PA3
 #define CHARGE PB4
 #define STANDBY PB3
-#define ENCODERA PA10
-#define ENCODERB PA2 //PA9
+#define ENCODERA PA9
+#define ENCODERB PA10
 #define BUZZER PA8
 #define ENCODERSWITCH PB15
+#define CE PB13
 
 // Screens
 #define SCREEN_WIDTH 128
@@ -303,6 +304,22 @@ void updateEEPROM() {
     EEPROM.update(ADDRESS_ALARM_TIME+1, wakeMinute);
     EEPROM.update(ADDRESS_VIBRATION_PATTERN, vibrationPattern);
     delay(10);
+}
+
+
+void firstProgram(bool is_first) {
+    if (is_first) {
+        rtc.adjust(DateTime(F(__DATE__), F(__TIME__)) + TimeSpan(6));
+        EEPROM.update(ADDRESS_ALWAYS_ON, 1);
+        EEPROM.update(ADDRESS_SOUND, 1);
+        EEPROM.update(ADDRESS_BRIGHTNESS, 0);
+        EEPROM.update(ADDRESS_ALARM_TIME, 0);
+        EEPROM.update(ADDRESS_ALARM_TIME+1, 0);
+        EEPROM.update(ADDRESS_VIBRATION_PATTERN, 1);
+        delay(5);
+        getEEPROM();
+        while(true) {}
+    }
 }
 
 
@@ -608,6 +625,7 @@ void checkEncoderButton() {
                     handleShortPress();
                 }
                 playShortPress();
+                digitalWrite(CE, !digitalRead(CE));
             }
         }
     }
@@ -657,13 +675,11 @@ void setup() {
     pinMode(ENCODERB, INPUT);
     pinMode(BUZZER, OUTPUT);
     pinMode(LED, OUTPUT);
-
-
-    // TODO Remove this for the new version
-    pinMode(RX, OUTPUT);
-    pinMode(TX, OUTPUT);
-    digitalWrite(RX, LOW);
+    pinMode(CE, OUTPUT);
+    digitalWrite(CE, LOW);
+    delay(10);
     getEEPROM();
+
 
     // Initialize OLED Screen
     if (!oled.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
@@ -693,7 +709,7 @@ void setup() {
         delay(100);
         while (true);
     }
-    // rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+    firstProgram(false);
     delay(500);
 
     attachInterrupt(digitalPinToInterrupt(ENCODERA), encoder_turn_callA, FALLING);
@@ -705,19 +721,19 @@ void setup() {
 void loop() {
     /*oled.clearDisplay();
     oled.setCursor(0, 0);
-    // oled.print("CHARGE: ");
-    // oled.println(!digitalRead(CHARGE));
-    // oled.print("STANDBY: ");
-    // oled.println(!digitalRead(STANDBY));
-    // oled.println("Bat-Level");
-    // delay(30);
-    // float value = 0.0;
-    // for (int i=0; i<10; i++) {
-    //     value = value + (float(analogRead(BATLEVEL))/4096) * 3.3 * 2;
-    //     delay(5);
-    // }
-    // float median = (float(value)/10);
-    // oled.println(median);
+    oled.print("CHARGE: ");
+    oled.println(!digitalRead(CHARGE));
+    oled.print("STANDBY: ");
+    oled.println(!digitalRead(STANDBY));
+    oled.println("Bat-Level");
+    delay(30);
+    float value = 0.0;
+    for (int i=0; i<10; i++) {
+        value = value + (float(analogRead(BATLEVEL))/4096) * 3.3 * 2;
+        delay(5);
+    }
+    float median = (float(value)/10);
+    oled.println(median);
     oled.display();
     delay(50);*/
 
