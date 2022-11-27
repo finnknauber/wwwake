@@ -56,6 +56,9 @@ unsigned long lastUserInput = 0;
 bool pressed = false;
 bool longPressRegistered = false;
 bool activeUser = false;
+bool currentlyCharging = false;
+bool activeBand = false;
+unsigned long lastBandCheck = 0;
 
 // Settings
 bool alwaysOn = true;
@@ -72,6 +75,18 @@ bool allowEncoderOverflow = true;
 int minLimitEncoder = 0;
 int maxLimitEncoder = 2;
 
+
+
+const unsigned char batteryBitmap [] PROGMEM = {
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xF8, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xF8, 0xC0, 0x00, 0x00, 0x00,
+    0x00, 0x18, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x18, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x18, 0xC0, 0x00,
+    0x00, 0x00, 0x00, 0x18, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x1F, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x1F,
+    0xC0, 0x00, 0x00, 0x00, 0x00, 0x1F, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x1F, 0xC0, 0x00, 0x00, 0x00,
+    0x00, 0x1F, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x1F, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x1F, 0xC0, 0x00,
+    0x00, 0x00, 0x00, 0x18, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x18, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x18,
+    0xC0, 0x00, 0x00, 0x00, 0x00, 0x18, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xF8, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFF, 0xF8
+};
 
 
 const unsigned char alwaysOffBitmap [] PROGMEM = {
@@ -285,6 +300,30 @@ void playStartSound() {
 }
 
 
+void playBandConnected() {
+    if (soundOn) {
+        tone(BUZZER, 4000);
+        delay(150);
+        tone(BUZZER, 3000);
+        delay(75);
+        noTone(BUZZER);
+        digitalWrite(BUZZER, LOW);
+    }
+}
+
+
+void playBandDisconnected() {
+    if (soundOn) {
+        tone(BUZZER, 3000);
+        delay(150);
+        tone(BUZZER, 4000);
+        delay(75);
+        noTone(BUZZER);
+        digitalWrite(BUZZER, LOW);
+    }
+}
+
+
 void getEEPROM() {
     EEPROM.get(ADDRESS_ALWAYS_ON, alwaysOn);
     EEPROM.get(ADDRESS_BRIGHTNESS, dimmed);
@@ -343,8 +382,18 @@ int limitEncoder() {
     return encoderLocation;
 }
 
+float getBatteryVoltage() {
+    float value = 0.0;
+    for (int i=0; i<10; i++) {
+        value = value + (float(analogRead(BATLEVEL))/4096) * 3.3 * 2;
+        delay(5);
+    }
+    float median = (float(value)/10);
+    return median;
+}
 
-void displayClock(bool center) {
+
+void getTimeStr() {
     DateTime now = rtc.now();
     timeString = "";
     if (now.hour() < 10) {
@@ -364,15 +413,27 @@ void displayClock(bool center) {
         timeString += "0";
     }
     timeString += now.minute();
+}
 
+
+void displayClock(bool center) {
     if (center) {
         oled.setTextSize(3);
-        oled.setCursor((SCREEN_WIDTH - 90) / 2, (SCREEN_HEIGHT - 24) / 2);
+        if (activeBand) {
+            oled.setCursor((SCREEN_WIDTH - 90) / 2, (SCREEN_HEIGHT - 24) / 2 - 15);
+            oled.drawBitmap((SCREEN_WIDTH - 48) / 2, 40, batteryBitmap, 48, 19, WHITE);
+            int length = map(getBatteryVoltage()*100, 340, 420, 1, 39);
+            oled.fillRect(43, 43, length, 13, WHITE);
+        }
+        else {
+            oled.setCursor((SCREEN_WIDTH - 90) / 2, (SCREEN_HEIGHT - 24) / 2);
+        }
     }
     else {
         oled.setTextSize(2);
         oled.setCursor((SCREEN_WIDTH - 60) / 2, 0);
     }
+    getTimeStr();
     oled.println(timeString);
 
     delay(3);
@@ -519,6 +580,22 @@ void checkActive() {
             updateEEPROM();
         }
     }
+    if (!currentlyCharging and millis() - lastBandCheck > 500) {
+        float value = 0.0;
+        for (int i=0; i<5; i++) {
+            value = value + (float(analogRead(BATLEVEL))/4096) * 3.3 * 2;
+            delay(5);
+        }
+        float median = (float(value)/10);
+        if (median > 2.00 and activeBand == false) {
+            activeBand = true;
+            playBandConnected();
+        }
+        else if (median < 2.00 and activeBand == true) {
+            activeBand = false;
+            playBandDisconnected();
+        }
+    }
 }
 
 
@@ -625,7 +702,6 @@ void checkEncoderButton() {
                     handleShortPress();
                 }
                 playShortPress();
-                digitalWrite(CE, !digitalRead(CE));
             }
         }
     }
@@ -667,6 +743,7 @@ void encoder_turn_callB() {
 void setup() {
     timeString.reserve(15);
     analogReadResolution(12);
+    Serial.begin(115200);
 
     pinMode(CHARGE, INPUT_PULLUP);
     pinMode(STANDBY, INPUT_PULLUP);
@@ -751,8 +828,7 @@ void loop() {
         displayClock(true);
     }
 
-
     oled.display();
-    delay(10);
+    delay(25);
 }
 

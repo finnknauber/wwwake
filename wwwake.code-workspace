@@ -6,7 +6,20 @@
 		{
 			"name": "Wwwake Charge Station",
 			"path": "Wwwake Charge Station"
+		},
+		{
+			"name": "Wwwake Band",
+			"path": "Wwwake Band"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"files.associations": {
+			"stm8s.h": "c",
+			"stm8s103_i2c.h": "c",
+			"stm8s_i2c.h": "c",
+			"stm8s_serial.h": "c",
+			"stm8s_uart.h": "c",
+			"stm8s_clk.h": "c"
+		}
+	}
 }
